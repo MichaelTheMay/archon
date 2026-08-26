@@ -1,0 +1,21 @@
+{
+  "name": "archon",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Autonomous system designer: idea → ranked forest of architectures, drawn live on a tldraw canvas.",
+  "packageManager": "pnpm@10.4.1",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "start": "node packages/server/dist/index.js",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "^2.10.12",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,17 @@
+# deps / build
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+
+# secrets — never commit
+.env
+.env.*
+!.env.example
+
+# runtime data (op-log db, screenshots)
+data/
+
+# misc
+.DS_Store
+*.log

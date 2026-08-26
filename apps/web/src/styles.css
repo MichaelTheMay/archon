@@ -1,0 +1,101 @@
+:root {
+  --bg: #0d0f12;
+  --panel: #15181d;
+  --line: #262b33;
+  --text: #e6e9ef;
+  --dim: #8b94a3;
+  --accent: #6ea8fe;
+  --good: #57c98a;
+  --bad: #e5687a;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); }
+
+/* ── intake ─────────────────────────────────────────────── */
+.intake { display: grid; place-items: center; height: 100%; padding: 24px; }
+.intake form { width: min(560px, 100%); display: flex; flex-direction: column; gap: 12px; }
+.intake h1 { margin: 0; font-size: 32px; letter-spacing: -0.02em; }
+.intake p { margin: 0 0 8px; color: var(--dim); line-height: 1.5; }
+.intake textarea, .intake button {
+  font: inherit; padding: 12px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--text); resize: vertical;
+}
+.intake button { background: var(--accent); color: #08111f; font-weight: 600; cursor: pointer; border: none; }
+.intake button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── app shell ──────────────────────────────────────────── */
+.app { display: grid; grid-template-columns: 1fr 340px; height: 100%; }
+.canvas-wrap { position: relative; }
+.rail { overflow-y: auto; border-left: 1px solid var(--line); background: var(--bg); padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.panel h2 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); display: flex; align-items: center; gap: 8px; }
+.count { background: var(--line); border-radius: 10px; padding: 1px 7px; font-size: 11px; color: var(--text); }
+
+/* ── controls ───────────────────────────────────────────── */
+.status { font-size: 11px; padding: 2px 7px; border-radius: 10px; background: var(--line); text-transform: none; letter-spacing: 0; }
+.status.running { background: #1d3b2a; color: var(--good); }
+.status.halted { background: #3b1d24; color: var(--bad); }
+.halt { color: var(--dim); font-size: 11px; text-transform: none; letter-spacing: 0; }
+.controls { display: flex; gap: 8px; margin-bottom: 10px; }
+.controls button, .row-actions button, .inject button, .tolive {
+  font: inherit; font-size: 12px; padding: 6px 10px; border-radius: 6px;
+  border: 1px solid var(--line); background: #1c2027; color: var(--text); cursor: pointer;
+}
+.controls button:hover, .row-actions button:hover { border-color: var(--accent); }
+.budget { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--dim); }
+.bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.fill { height: 100%; background: var(--accent); transition: width 0.3s; }
+.budget input { width: 64px; background: #1c2027; border: 1px solid var(--line); color: var(--text); border-radius: 4px; padding: 2px 6px; font: inherit; }
+.activity { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 11px; }
+.role { display: inline-block; padding: 1px 6px; border-radius: 4px; background: var(--line); margin-right: 6px; }
+.role.researcher { background: #33234a; color: #c9a7ff; }
+.role.expander { background: #1d3040; color: #8fc6ff; }
+.role.scorer { background: #3d3418; color: #e3cd7a; }
+.msg { color: var(--dim); }
+
+/* ── frontier ───────────────────────────────────────────── */
+.frontier { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+.frontier .row { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 6px; border-radius: 6px; background: #1a1e25; }
+.frontier .row.busy { outline: 1px solid var(--accent); }
+.row-main { display: flex; gap: 6px; align-items: baseline; min-width: 0; flex: 1; }
+.depth { color: var(--dim); font-size: 10px; flex-shrink: 0; }
+.label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.empty { color: var(--dim); font-size: 12px; font-style: italic; }
+.spinner { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1s infinite; }
+@keyframes pulse { 50% { opacity: 0.25; } }
+.inject { display: flex; gap: 6px; margin-top: 8px; }
+.inject input { flex: 1; min-width: 0; font: inherit; font-size: 12px; padding: 6px; border-radius: 6px; border: 1px solid var(--line); background: #1a1e25; color: var(--text); }
+
+/* ── scores ─────────────────────────────────────────────── */
+.scores { width: 100%; border-collapse: collapse; font-size: 11px; }
+.scores th { color: var(--dim); font-weight: 500; text-align: right; padding: 3px; }
+.scores th:first-child { text-align: left; }
+.scores td { padding: 3px; text-align: right; }
+.scores td:first-child { text-align: left; color: var(--dim); }
+.scores tr.best .scalar { color: var(--good); font-weight: 700; }
+
+/* ── timeline ───────────────────────────────────────────── */
+.timeline input[type="range"] { width: 100%; accent-color: var(--accent); }
+.live { color: var(--good); text-transform: none; letter-spacing: 0; }
+.past { color: var(--accent); text-transform: none; letter-spacing: 0; }
+.frame { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dim); margin-top: 4px; }
+.reasoning { font-size: 11px; color: var(--dim); line-height: 1.45; margin: 8px 0 0; max-height: 72px; overflow-y: auto; }
+
+.error { color: var(--bad); font-size: 12px; cursor: pointer; margin: 0; }
+
+/* ── past runs ──────────────────────────────────────────── */
+.past { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px; }
+.past h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); margin: 0 0 8px; }
+.past ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.past button {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: var(--panel); border: 1px solid var(--line); color: var(--text);
+  padding: 8px 10px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer;
+}
+.past button:hover { border-color: var(--accent); }
+.past .idea { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); }
