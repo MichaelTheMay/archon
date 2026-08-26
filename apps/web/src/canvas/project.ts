@@ -1,6 +1,6 @@
 import type { Editor, TLDefaultColorStyle, TLGeoShapeProps, TLShapeId } from "tldraw";
 import { createShapeId, toRichText } from "tldraw";
-import type { LayoutSnapshot, Node, SerializedGraph } from "@archon/core";
+import { displayLabel, type LayoutSnapshot, type Node, type SerializedGraph } from "@archon/core";
 
 /**
  * Project the DesignGraph onto tldraw. The graph is the source of truth; this is a view.
@@ -38,12 +38,6 @@ function styleFor(n: Node): { geo: Geo; color: TLDefaultColorStyle } {
   }
 }
 
-function labelFor(n: Node): string {
-  if (n.data.kind === "component" && n.data.technology) return `${n.label}\n${n.data.technology}`;
-  if (n.data.kind === "requirement" && n.data.target) return `${n.label}\n${n.data.target}`;
-  return n.label;
-}
-
 export const shapeIdFor = (nodeId: string): TLShapeId => createShapeId(`n-${nodeId}`);
 const arrowIdFor = (edgeId: string): TLShapeId => createShapeId(`e-${edgeId}`);
 
@@ -63,7 +57,7 @@ export function applyProjection(editor: Editor, graph: SerializedGraph, layout: 
           type: "geo",
           x: box.x,
           y: box.y,
-          props: { geo, color, w: box.w, h: box.h, richText: toRichText(labelFor(n)) },
+          props: { geo, color, w: box.w, h: box.h, richText: toRichText(displayLabel(n)) },
         });
       } else {
         editor.createShape({
@@ -71,7 +65,7 @@ export function applyProjection(editor: Editor, graph: SerializedGraph, layout: 
           type: "geo",
           x: box.x,
           y: box.y,
-          props: { geo, color, w: box.w, h: box.h, size: "s", font: "sans", richText: toRichText(labelFor(n)) },
+          props: { geo, color, w: box.w, h: box.h, size: "s", font: "sans", richText: toRichText(displayLabel(n)) },
         });
       }
     }

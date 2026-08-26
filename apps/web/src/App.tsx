@@ -34,7 +34,6 @@ export function App() {
   }, []);
   const [past, setPast] = useState<{ id: string; idea: string; status: string }[]>([]);
   const [idea, setIdea] = useState("");
-  const [notes, setNotes] = useState("");
   const [graph, setGraph] = useState<SerializedGraph | null>(null);
   const [layout, setLayout] = useState<LayoutSnapshot | null>(null);
   const [scores, setScores] = useState<BranchScore[]>([]);
@@ -128,7 +127,7 @@ export function App() {
     e.preventDefault();
     if (!idea.trim()) return;
     try {
-      const r = await api.createRun(idea.trim(), notes.trim() || undefined);
+      const r = await api.createRun(idea.trim());
       setRunId(r.id);
     } catch (err) {
       setError(String((err as Error).message));
@@ -156,10 +155,24 @@ export function App() {
       <div className="intake">
         <form onSubmit={onStart}>
           <h1>Archon</h1>
-          <p>Give it an idea. It expands the open design decisions breadth-first, researches what it doesn't know, and draws the architecture as it goes.</p>
-          <textarea value={idea} onChange={(e) => setIdea(e.target.value)} placeholder="A real-time collaborative document editor for 100k concurrent users…" rows={4} autoFocus />
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Constraints: team size, budget, latency targets, existing stack… (optional)" rows={3} />
-          <button type="submit" disabled={!idea.trim()}>Start design run →</button>
+          <p>Describe what you want built, however you'd say it out loud. It pulls out the
+          requirements, expands the open design decisions breadth-first, researches what it
+          doesn't know, and draws the architecture as it goes.</p>
+          <textarea
+            value={idea}
+            onChange={(e) => setIdea(e.target.value)}
+            onKeyDown={(e) => {
+              // ⌘/Ctrl+Enter submits, so a multi-line prompt still takes plain Enter.
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit();
+            }}
+            placeholder="I need a real-time collaborative doc editor. Maybe 100k people online at once, and it has to feel instant — under 100ms. Small team, we don't want to babysit infrastructure."
+            rows={6}
+            autoFocus
+          />
+          <button type="submit" disabled={!idea.trim()}>
+            Start design run →
+          </button>
+          <p className="hint">⌘↵ to start</p>
           {error && <p className="error">{error}</p>}
           {past.length > 0 && (
             <div className="past">

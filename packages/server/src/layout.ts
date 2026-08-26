@@ -1,15 +1,7 @@
 import ELK from "elkjs/lib/elk.bundled.js";
-import type { LayoutSnapshot, SerializedGraph } from "@archon/core";
+import { nodeSize, separate, type LayoutSnapshot, type SerializedGraph } from "@archon/core";
 
 const elk = new ELK();
-
-const SIZE: Record<string, { w: number; h: number }> = {
-  component: { w: 220, h: 90 },
-  decision: { w: 240, h: 110 },
-  requirement: { w: 200, h: 70 },
-  assumption: { w: 200, h: 70 },
-  research: { w: 230, h: 90 },
-};
 
 const BRANCH_GAP = 420;
 const BRANCH_PAD = 60;
@@ -51,7 +43,9 @@ export async function layoutGraph(graph: SerializedGraph): Promise<LayoutSnapsho
         "elk.layered.wrapping.strategy": "MULTI_EDGE",
       },
       children: nodes.map((n) => {
-        const s = SIZE[n.kind] ?? SIZE.component!;
+        // Size from the actual label so ELK reserves enough room; otherwise long text
+        // overflows its box and collides with neighbours that never geometrically overlap.
+        const s = nodeSize(n);
         return {
           id: n.id,
           width: s.w,
@@ -89,6 +83,11 @@ export async function layoutGraph(graph: SerializedGraph): Promise<LayoutSnapsho
     };
     cursorX += maxX + BRANCH_GAP;
   }
+
+  // Last-resort guard: ELK never overlaps boxes, but a human-pinned position can land on
+  // top of one. Push the unpinned neighbours aside rather than letting the canvas go ugly.
+  const pinnedIds = new Set(graph.nodes.filter((n) => n.pinnedPosition).map((n) => n.id));
+  if (pinnedIds.size) separate(out.nodes, pinnedIds);
 
   return out;
 }

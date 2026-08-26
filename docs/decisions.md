@@ -47,8 +47,9 @@ component is *agreement*. `addNode` and `openDecision` on an existing id are now
 Observed 20 decisions against 5 components: expansion opens questions faster than it
 closes them, so the frontier never empties and every run terminates on budget rather than
 convergence. Fan-out allowance is now **tapered by depth** and hits zero at the depth
-limit. Measured after the change: open decisions fell 11 → 7 while resolved rose 4 → 8, so
-the taper does reverse the growth rate rather than merely slowing it.
+limit. Confirmed by a full run: it halted on **`frontier_empty`** with 0 open decisions,
+14 resolved and 14 components, for $0.47. The taper makes the tree close itself rather
+than merely slowing its growth.
 
 **18. Only structural edges may drive layout.**
 `satisfies` fans from every component back to a handful of shared requirements. Fed to
@@ -87,6 +88,29 @@ cap, asking a follow-up on exactly the nodes deep expansion produces returned a 
 Human origin now bypasses the fan-out cap, and rejected edits surface in the UI — a
 silently dropped instruction is worse than a visible error, because the user assumes the
 loop took it.
+
+**21d. One prompt, not a form.**
+Intake originally asked for an idea plus a separate constraints field, which is not how
+anyone describes a system out loud. It is now a single free-text box, and the Orchestrator's
+job starts earlier: read the constraints out of casual prose and record each reading as a
+correctable assumption. "Update basically instantly" became a p99 ≤ 500ms requirement plus
+an assumption quoting the phrase and naming the number chosen — which is exactly the
+behaviour decision 9 asked for, surfaced where a human can argue with it.
+
+**21e. Text overflow is not overlap, and it is the thing that actually looks broken.**
+Nodes appeared to collide while the layout reported zero overlapping boxes: sizes were
+hardcoded constants and labels were full sentences, so text spilled over its own borders
+onto neighbours. Size is now derived from the label and shared by ELK and the canvas —
+they must agree or the bug returns. Diamonds and ellipses get extra slack because their
+inscribed text area is much smaller than their bounding box, which is why decision nodes
+were the worst offenders. A deterministic `separate()` pass handles the one case ELK
+cannot: a human dragging a node on top of another.
+
+**21f. A projection must refuse edits it cannot keep.**
+Typing over a shape entered tldraw's in-place text editor, and the next layout pass would
+have silently discarded the result. Edit mode is now refused on the canvas; the Inspector
+is where text changes. Same principle as hiding the drawing tools — never offer an
+interaction whose effect you are about to throw away.
 
 ## Iteration 6 — what v1 should be, in order
 

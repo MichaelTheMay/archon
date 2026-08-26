@@ -23,14 +23,17 @@ export function Canvas({ graph, layout, onPin, onSelect }: Props) {
       editorRef.current = editor;
       // A human dragging a node pins it: the layout engine then treats that position
       // as fixed rather than fighting the user on the next pass.
-      // Selecting a shape selects the graph node behind it: the canvas is the primary
-      // way to act on the design, not just to look at it.
-      if (onSelect) {
-        editor.sideEffects.registerAfterChangeHandler("instance_page_state", (_prev, next) => {
-          const ids = next.selectedShapeIds;
-          onSelect(ids.length === 1 ? nodeIdOf(ids[0]!) : null);
-        });
-      }
+      editor.sideEffects.registerAfterChangeHandler("instance_page_state", (_prev, next) => {
+        // Labels are rendered from the graph, so in-place text editing would be silently
+        // discarded by the next layout pass. Refuse to enter edit mode; the Inspector is
+        // where text is actually changed.
+        if (next.editingShapeId) editor.setEditingShape(null);
+
+        // Selecting a shape selects the graph node behind it: the canvas is the primary
+        // way to act on the design, not just to look at it.
+        const ids = next.selectedShapeIds;
+        onSelect?.(ids.length === 1 ? nodeIdOf(ids[0]!) : null);
+      });
 
       editor.store.listen(
         (entry) => {
