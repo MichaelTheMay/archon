@@ -74,6 +74,9 @@ describe("reducer", () => {
     expect(step([{ op: "openDecision", id: "d1", parentId: "d0", question: "q" }])).toBe(true);
     expect(step([{ op: "openDecision", id: "d2", parentId: "d0", question: "q" }])).toBe(true);
     expect(step([{ op: "openDecision", id: "d3", parentId: "d0", question: "q" }])).toBe(false); // fan-out
+    // ...but a human asking a follow-up is never runaway expansion.
+    const human = { ...batch([{ op: "openDecision" as const, id: "d3h", parentId: "d0", question: "q" }]), origin: "human" as const };
+    expect(applyBatch(g, human, limits).ok).toBe(true);
     expect(step([{ op: "openDecision", id: "d4", parentId: "d1", question: "q" }])).toBe(true);
     expect(step([{ op: "openDecision", id: "d5", parentId: "d4", question: "q" }])).toBe(true);
     expect(step([{ op: "openDecision", id: "d6", parentId: "d5", question: "q" }])).toBe(false); // depth

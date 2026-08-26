@@ -20,8 +20,18 @@ export async function control(runId: string, action: "start" | "pause" | "resume
   await fetch(`/api/runs/${runId}/${action}`, { method: "POST" });
 }
 
+/** Throws on rejection so the caller can surface it — a silently dropped edit is worse
+ *  than a visible error, because the user assumes the loop took their instruction. */
 export async function sendOps(runId: string, ops: Op[], reasoning?: string): Promise<void> {
-  await fetch(`/api/runs/${runId}/ops`, { method: "POST", headers: json, body: JSON.stringify({ ops, reasoning }) });
+  const res = await fetch(`/api/runs/${runId}/ops`, {
+    method: "POST",
+    headers: json,
+    body: JSON.stringify({ ops, reasoning }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+    throw new Error(res.status === 409 ? "the graph rejected that edit" : `edit failed (${res.status})${body.error ? `: ${JSON.stringify(body.error)}` : ""}`);
+  }
 }
 
 export async function setBudget(runId: string, usd: number | null): Promise<void> {

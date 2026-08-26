@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   BranchScore,
+  Op,
   BudgetSnapshot,
   HaltReason,
   LayoutSnapshot,
@@ -134,12 +135,20 @@ export function App() {
     }
   };
 
+  /** Every human edit goes through here so a rejection surfaces instead of vanishing. */
+  const ops = useCallback(
+    (id: string, list: Op[], reasoning?: string) => {
+      void api.sendOps(id, list, reasoning).catch((e: Error) => setError(e.message));
+    },
+    [],
+  );
+
   const onPin = useCallback(
     (nodeId: string, pos: { x: number; y: number }) => {
       if (!runId) return;
-      void api.sendOps(runId, [{ op: "updateNode", id: nodeId, patch: { pinned: true, pinnedPosition: pos } }], "human pinned position");
+      ops(runId, [{ op: "updateNode", id: nodeId, patch: { pinned: true, pinnedPosition: pos } }], "human pinned position");
     },
-    [runId],
+    [runId, ops],
   );
 
   if (!runId) {
@@ -180,16 +189,16 @@ export function App() {
       <aside className="rail">
         <Inspector
           node={selected}
-          onPin={(id, pinned) => void api.sendOps(runId, [{ op: "updateNode", id, patch: { pinned } }])}
+          onPin={(id, pinned) => ops(runId, [{ op: "updateNode", id, patch: { pinned } }])}
           onKill={(id) => {
             setSelectedId(null);
-            void api.sendOps(runId, [{ op: "removeNode", id }], "human killed subtree");
+            ops(runId, [{ op: "removeNode", id }], "human killed subtree");
           }}
           onSteer={(id, text) =>
-            void api.sendOps(runId, [{ op: "updateNode", id, patch: { label: text } }], "human corrected")
+            ops(runId, [{ op: "updateNode", id, patch: { label: text } }], "human corrected")
           }
           onAsk={(parentId, question) =>
-            void api.sendOps(runId, [{ op: "openDecision", parentId, question }], "human asked a follow-up")
+            ops(runId, [{ op: "openDecision", parentId, question }], "human asked a follow-up")
           }
           onClose={() => setSelectedId(null)}
         />
@@ -204,9 +213,9 @@ export function App() {
         <Frontier
           decisions={frontier}
           inFlight={inFlight}
-          onPin={(id, pinned) => void api.sendOps(runId, [{ op: "updateNode", id, patch: { pinned } }])}
-          onKill={(id) => void api.sendOps(runId, [{ op: "removeNode", id }], "human killed branch")}
-          onInject={(question) => void api.sendOps(runId, [{ op: "openDecision", question, parentId: "root" }], "human injected decision")}
+          onPin={(id, pinned) => ops(runId, [{ op: "updateNode", id, patch: { pinned } }])}
+          onKill={(id) => ops(runId, [{ op: "removeNode", id }], "human killed branch")}
+          onInject={(question) => ops(runId, [{ op: "openDecision", question, parentId: "root" }], "human injected decision")}
         />
         <Scores scores={scores} />
         <Timeline entries={timelineEntries} scrub={scrub} onScrub={setScrub} />

@@ -47,7 +47,8 @@ component is *agreement*. `addNode` and `openDecision` on an existing id are now
 Observed 20 decisions against 5 components: expansion opens questions faster than it
 closes them, so the frontier never empties and every run terminates on budget rather than
 convergence. Fan-out allowance is now **tapered by depth** and hits zero at the depth
-limit, forcing the tree to close itself.
+limit. Measured after the change: open decisions fell 11 → 7 while resolved rose 4 → 8, so
+the taper does reverse the growth rate rather than merely slowing it.
 
 **18. Only structural edges may drive layout.**
 `satisfies` fans from every component back to a handful of shared requirements. Fed to
@@ -71,6 +72,21 @@ tldraw's toolbar and style panel invite edits that the next layout pass silently
 Editing chrome is hidden; navigation stays. The one edit that *is* meaningful — dragging a
 node — is captured as a pin, and ELK's output is overwritten for pinned nodes because
 `elk.position` is only a hint under `layered`.
+
+**21b. A blocked call blocks the whole loop.**
+A run sat `running` for minutes with zero nodes and no error: the orchestrator awaits each
+LLM call, so one stalled socket parks the entire run silently. Calls now carry a wall-clock
+timeout, longer for tool-using research. The related orphan case — a run whose owning
+process dies *after* boot stays `running` forever, because the recovery sweep only runs at
+startup — is still open.
+
+**21c. Human ops must bypass structural caps, not just concurrency.**
+"You always win" was only half true: human batches skipped `baseVersions` but were still
+subject to the fan-out cap. Since the taper (17) means deep nodes legitimately sit at the
+cap, asking a follow-up on exactly the nodes deep expansion produces returned a silent 409.
+Human origin now bypasses the fan-out cap, and rejected edits surface in the UI — a
+silently dropped instruction is worse than a visible error, because the user assumes the
+loop took it.
 
 ## Iteration 6 — what v1 should be, in order
 

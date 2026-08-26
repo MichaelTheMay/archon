@@ -75,7 +75,10 @@ produced it. That single mechanism gives you:
 - **Resume** — kill the server mid-run; restart rebuilds the graph and parks it paused.
 - **Scrub** — the Replay slider re-derives the graph as of any point, so you can watch the
   expansion happen after the fact.
-- **Zero-cost replay** — `MOCK_LLM=1` serves recorded responses and never hits the network.
+- **Zero-cost replay** — `MOCK_LLM=1` serves recorded responses and never touches the
+  network, which makes it the right mode for working on the UI. It replays work that was
+  already done; it cannot expand a decision that has no recording, so a resumed run will
+  stall its untouched frontier rather than continue.
 
 Runs are deep-linkable at `/?run=<id>`.
 
@@ -88,7 +91,12 @@ The loop is steerable while it runs, without stopping it:
 - **inject** a decision into the frontier
 - **budget dial**, run/pause/step
 
-Human ops carry `origin: "human"` and bypass optimistic concurrency: you always win.
+Clicking a shape opens an Inspector for that node with the actions that fit it — a
+decision shows its chosen option and rationale, a research node its findings and sources.
+
+Human ops carry `origin: "human"` and bypass both optimistic concurrency and the fan-out
+cap: you always win. Anything the graph does refuse surfaces in the UI rather than being
+dropped silently.
 
 ## Configuration
 
