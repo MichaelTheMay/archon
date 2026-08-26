@@ -15,6 +15,9 @@ export interface ProviderConfig {
   mock: boolean;
   cache?: ResponseCache;
   maxRetries?: number;
+  /** Per-call wall clock. Tool-using research calls get a longer one. */
+  timeoutMs?: number;
+  toolTimeoutMs?: number;
   onRateLimit?: () => void;
 }
 
@@ -65,6 +68,9 @@ export class Provider {
           prompt: args.prompt,
           output: Output.object({ schema: args.schema }),
           maxRetries: 0, // we own the retry loop
+          // Without this a stalled connection hangs the orchestrator forever: the loop
+          // awaits the call, so one dead socket silently parks the whole run.
+          timeout: args.tools ? (this.cfg.toolTimeoutMs ?? 240_000) : (this.cfg.timeoutMs ?? 120_000),
           ...(args.tools ? { tools: args.tools, stopWhen: stepCountIs(args.maxSteps ?? 6) } : {}),
         });
         const usage: Usage = {
