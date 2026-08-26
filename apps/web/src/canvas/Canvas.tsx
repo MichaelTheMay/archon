@@ -8,9 +8,13 @@ interface Props {
   graph: SerializedGraph | null;
   layout: LayoutSnapshot | null;
   onPin?: (nodeId: string, pos: { x: number; y: number }) => void;
+  onSelect?: (nodeId: string | null) => void;
 }
 
-export function Canvas({ graph, layout, onPin }: Props) {
+const nodeIdOf = (shapeId: string): string | null =>
+  shapeId.startsWith("shape:n-") ? shapeId.replace("shape:n-", "") : null;
+
+export function Canvas({ graph, layout, onPin, onSelect }: Props) {
   const editorRef = useRef<Editor | null>(null);
   const fitted = useRef(false);
 
@@ -19,6 +23,15 @@ export function Canvas({ graph, layout, onPin }: Props) {
       editorRef.current = editor;
       // A human dragging a node pins it: the layout engine then treats that position
       // as fixed rather than fighting the user on the next pass.
+      // Selecting a shape selects the graph node behind it: the canvas is the primary
+      // way to act on the design, not just to look at it.
+      if (onSelect) {
+        editor.sideEffects.registerAfterChangeHandler("instance_page_state", (_prev, next) => {
+          const ids = next.selectedShapeIds;
+          onSelect(ids.length === 1 ? nodeIdOf(ids[0]!) : null);
+        });
+      }
+
       editor.store.listen(
         (entry) => {
           if (!onPin) return;
@@ -34,7 +47,7 @@ export function Canvas({ graph, layout, onPin }: Props) {
         { source: "user", scope: "document" },
       );
     },
-    [onPin],
+    [onPin, onSelect],
   );
 
   useEffect(() => {

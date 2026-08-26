@@ -13,6 +13,7 @@ import { Canvas } from "./canvas/Canvas.js";
 import { Controls } from "./panels/Controls.js";
 import { Frontier } from "./panels/Frontier.js";
 import { Scores } from "./panels/Scores.js";
+import { Inspector } from "./panels/Inspector.js";
 import { Timeline } from "./panels/Timeline.js";
 import * as api from "./api.js";
 
@@ -45,6 +46,8 @@ export function App() {
   const [scrub, setScrub] = useState<number | null>(null);
   const [activity, setActivity] = useState<{ agentId: string; role: string; message: string | undefined }[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = graph?.nodes.find((n) => n.id === selectedId) ?? null;
 
   const scrubRef = useRef<number | null>(null);
   scrubRef.current = scrub;
@@ -172,9 +175,24 @@ export function App() {
   return (
     <div className="app">
       <div className="canvas-wrap">
-        <Canvas graph={graph} layout={layout} onPin={onPin} />
+        <Canvas graph={graph} layout={layout} onPin={onPin} onSelect={setSelectedId} />
       </div>
       <aside className="rail">
+        <Inspector
+          node={selected}
+          onPin={(id, pinned) => void api.sendOps(runId, [{ op: "updateNode", id, patch: { pinned } }])}
+          onKill={(id) => {
+            setSelectedId(null);
+            void api.sendOps(runId, [{ op: "removeNode", id }], "human killed subtree");
+          }}
+          onSteer={(id, text) =>
+            void api.sendOps(runId, [{ op: "updateNode", id, patch: { label: text } }], "human corrected")
+          }
+          onAsk={(parentId, question) =>
+            void api.sendOps(runId, [{ op: "openDecision", parentId, question }], "human asked a follow-up")
+          }
+          onClose={() => setSelectedId(null)}
+        />
         <Controls
           status={status}
           haltReason={haltReason}

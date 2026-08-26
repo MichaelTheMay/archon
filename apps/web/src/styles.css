@@ -88,6 +88,20 @@ body { background: var(--bg); color: var(--text); }
 
 .error { color: var(--bad); font-size: 12px; cursor: pointer; margin: 0; }
 
+/* ── inspector ──────────────────────────────────────────── */
+.inspector { border-color: var(--accent); }
+.inspector h2 { text-transform: uppercase; }
+.inspector .close { margin-left: auto; background: none; border: none; color: var(--dim); cursor: pointer; font-size: 12px; padding: 0 2px; }
+.inspector .close:hover { color: var(--text); }
+.node-label { margin: 0 0 8px; font-size: 13px; line-height: 1.4; }
+.meta { margin: 0 0 8px; font-size: 11px; color: var(--dim); }
+.chosen { margin: 0 0 8px; font-size: 12px; line-height: 1.45; }
+.rationale { color: var(--dim); }
+.options, .sources { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--dim); }
+.options li::before { content: "· "; }
+.sources li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sources a { color: var(--accent); text-decoration: none; }
+
 /* ── past runs ──────────────────────────────────────────── */
 .past { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px; }
 .past h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); margin: 0 0 8px; }
