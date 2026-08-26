@@ -21,8 +21,15 @@ export function createApp(cfg: Config, log: OpLog, logger: Logger) {
       models: cfg.models,
       mock: cfg.MOCK_LLM === 1,
       cache: log.cacheFor(runId),
+      timeoutMs: cfg.LLM_TIMEOUT_MS,
+      toolTimeoutMs: cfg.LLM_TOOL_TIMEOUT_MS,
     });
 
+  /**
+   * A run marked `running` in the log with no live process behind it is an orphan: its
+   * owning process died after the boot sweep. Rehydrate and pick it back up rather than
+   * leaving it stuck as "running" forever with nothing driving it.
+   */
   async function getRun(id: string): Promise<Run | undefined> {
     const live = runs.get(id);
     if (live) return live;
@@ -30,8 +37,14 @@ export function createApp(cfg: Config, log: OpLog, logger: Logger) {
     if (!row) return undefined;
     const run = new Run(row.id, row.idea, cfg, log, logger, provider(row.id), row.notes ?? undefined);
     await run.hydrate();
-    run.status = row.status === "running" ? "paused" : (row.status as typeof run.status);
     runs.set(id, run);
+    if (row.status === "running") {
+      logger.warn({ runId: id }, "adopting orphaned run");
+      run.status = "paused";
+      run.start();
+    } else {
+      run.status = row.status as typeof run.status;
+    }
     return run;
   }
 

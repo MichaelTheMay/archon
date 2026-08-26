@@ -18,11 +18,17 @@ export function Controls({ status, haltReason, budget, activity, onControl, onBu
         {haltReason && <span className="halt">{haltReason.replace("_", " ")}</span>}
       </h2>
       <div className="controls">
-        <button onClick={() => onControl(status === "running" ? "pause" : "start")}>
-          {status === "running" ? "⏸ pause" : "▶ run"}
+        <button className="primary" onClick={() => onControl(status === "running" ? "pause" : "start")}>
+          {status === "running" ? "⏸ stop" : "▶ grow"}
         </button>
         <button onClick={() => onControl("step")}>⏭ step</button>
       </div>
+      {haltReason === "budget" && status === "paused" && (
+        <p className="throttled">Hit the budget. Raise it below and press grow to carry on.</p>
+      )}
+      {haltReason === "node_limit" && status === "paused" && (
+        <p className="throttled">Hit the node cap. Raise MAX_NODES to keep growing.</p>
+      )}
       <div className="budget">
         <div className="bar">
           <div className="fill" style={{ width: `${pct}%` }} />
@@ -43,6 +49,9 @@ export function Controls({ status, haltReason, budget, activity, onControl, onBu
       </div>
       {activity.length > 0 && (
         <ul className="activity">
+          <li className="workers">
+            {activity.length} worker{activity.length === 1 ? "" : "s"} running
+          </li>
           {activity.map((a) => (
             <li key={a.agentId + a.role}>
               <span className={`role ${a.role}`}>{a.role}</span>

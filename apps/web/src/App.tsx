@@ -93,7 +93,7 @@ export function App() {
           setActivity((prev) => {
             const next = prev.filter((a) => a.agentId !== e.agentId || a.role !== e.role);
             if (e.state === "start") next.push({ agentId: e.agentId, role: e.role, message: e.message });
-            return next.slice(-6);
+            return next.slice(-10);
           });
           break;
         case "rejected":

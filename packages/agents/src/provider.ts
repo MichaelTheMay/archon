@@ -70,7 +70,9 @@ export class Provider {
           maxRetries: 0, // we own the retry loop
           // Without this a stalled connection hangs the orchestrator forever: the loop
           // awaits the call, so one dead socket silently parks the whole run.
-          timeout: args.tools ? (this.cfg.toolTimeoutMs ?? 240_000) : (this.cfg.timeoutMs ?? 120_000),
+          // Generous: a reasoning model filling a large schema regularly runs past two
+          // minutes, and a timeout here costs a whole expander call plus a retry.
+          timeout: args.tools ? (this.cfg.toolTimeoutMs ?? 420_000) : (this.cfg.timeoutMs ?? 300_000),
           ...(args.tools ? { tools: args.tools, stopWhen: stepCountIs(args.maxSteps ?? 6) } : {}),
         });
         const usage: Usage = {

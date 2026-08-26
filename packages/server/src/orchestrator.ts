@@ -12,6 +12,7 @@ import {
   pruneCandidates,
   replayTo,
   serializeGraph,
+  stratify,
   timeline,
   weightedScore,
   type BranchScore,
@@ -25,13 +26,18 @@ import {
   type Profile,
   type RunEvent,
   type RunStatus,
+  type ScoredDecision,
 } from "@archon/core";
 import {
   Provider,
+  compileCriticOps,
+  compileForkOps,
   compileIntakeOps,
   compileOps,
   compileResearchOps,
+  forkCandidates,
   researchFor,
+  runCritic,
   runExpander,
   runIntake,
   runResearcher,
@@ -39,7 +45,7 @@ import {
 } from "@archon/agents";
 import type { Logger } from "pino";
 import type { Config } from "./config.js";
-import { layoutGraph } from "./layout.js";
+import { debounceLayout, layoutGraph } from "./layout.js";
 import type { OpLog } from "./oplog.js";
 
 const SCORE_EVERY = 4;
@@ -61,6 +67,13 @@ export class Run {
   private loopPromise?: Promise<void>;
   private stepOnce = false;
   private lastRateLimit = 0;
+  private slotWaiters: (() => void)[] = [];
+  private scoring = false;
+  private lastRejectWasConflict = false;
+  private lastCritique = new Map<string, number>();
+  private forked = new Set<string>();
+  private forkCounter = 1;
+  private scheduleLayout: (g: ReturnType<typeof serializeGraph>) => void;
 
   constructor(
     readonly id: string,
@@ -78,6 +91,14 @@ export class Run {
     };
     this.concurrency = cfg.MAX_CONCURRENCY;
     this.budget = new BudgetTracker(cfg.BUDGET_USD);
+    // ELK over the whole graph on every commit serialises the commit path once several
+    // workers are running. Coalesce bursts into one pass instead.
+    this.scheduleLayout = debounceLayout((g) => {
+      void layoutGraph(g).then((layout) => {
+        this.layout = layout;
+        this.emit({ type: "layout", layout });
+      });
+    }, 400);
   }
 
   // ── wiring ──────────────────────────────────────────────────────────
@@ -138,6 +159,7 @@ export class Run {
   private async commit(batch: OpBatch): Promise<boolean> {
     const res = applyBatch(this.graph, batch, this.limits);
     if (!res.ok) {
+      this.lastRejectWasConflict = /version conflict/.test(res.rejected.reason);
       this.logger.warn({ reason: res.rejected.reason, role: batch.role }, "batch rejected");
       this.emit({ type: "rejected", batch, reason: res.rejected.reason });
       return false;
@@ -148,8 +170,7 @@ export class Run {
     const graph = serializeGraph(this.graph);
     const entry = timeline([{ seq, batch }])[0]!;
     this.emit({ type: "batch", batch, seq, entry, graph });
-    this.layout = await layoutGraph(graph);
-    this.emit({ type: "layout", layout: this.layout });
+    this.scheduleLayout(graph);
     this.emitFrontier();
     return true;
   }
@@ -191,7 +212,9 @@ export class Run {
     this.emitStatus();
     this.loopPromise = this.loop().catch((err) => {
       this.logger.error({ err }, "loop crashed");
-      this.status = "halted";
+      // Pause rather than halt: a timed-out call or a bad response should never
+      // permanently kill a run whose whole point is to keep going. Pressing grow retries.
+      this.status = "paused";
       this.haltReason = "error";
       this.emit({ type: "error", message: String((err as Error)?.message ?? err) });
       this.emitStatus();
@@ -226,41 +249,169 @@ export class Run {
 
   // ── the loop ────────────────────────────────────────────────────────
 
+  /**
+   * A continuous worker pool, not a wave.
+   *
+   * The old loop dispatched a batch and awaited all of it, so every worker sat idle
+   * waiting for the slowest one and expansion advanced in lockstep. Here a slot that
+   * frees is refilled immediately from the scheduler, which reserves capacity per depth
+   * band so deep and shallow work advance together rather than depth waiting its turn.
+   *
+   * In continuous mode an empty frontier is not the end: it is the cue to generate more
+   * work -- critique the design, open up its black boxes, fork a decision into a rival
+   * branch -- so the design keeps getting bigger until a human stops it.
+   */
   private async loop(): Promise<void> {
     if (this.graph.nodes.size === 0) {
       await this.intake();
     }
 
     while (this.status === "running") {
-      if (this.budget.exhausted()) return this.halt("budget");
-      if (this.graph.nodes.size >= this.limits.maxNodes) return this.halt("node_limit");
+      // Soft caps: pause and surface why, so bumping the dial resumes from right here.
+      if (this.budget.exhausted()) return this.softStop("budget");
+      if (this.graph.nodes.size >= this.limits.maxNodes) return this.softStop("node_limit");
 
-      const frontier = openDecisions(this.graph).filter((d) => !this.inFlight.has(d.id));
-      if (!frontier.length) {
-        if (this.inFlight.size === 0) return this.halt("frontier_empty");
-        await new Promise((r) => setTimeout(r, 100));
+      const slots = this.concurrency - this.inFlight.size;
+      if (slots > 0) {
+        const picks = stratify({ graph: this.graph, scores: this.scoreMap() }, slots, this.inFlight);
+        if (picks.length) {
+          for (const pick of picks) this.spawn(pick);
+          if (this.stepOnce) {
+            this.stepOnce = false;
+            this.pause();
+          }
+          continue;
+        }
+      }
+
+      // Nothing dispatchable: either the workers are busy, or the frontier has run dry.
+      if (this.inFlight.size > 0) {
+        await this.waitForSlot();
         continue;
       }
 
-      const slots = Math.max(0, this.concurrency - this.inFlight.size);
-      const wave = frontier.slice(0, Math.max(1, slots));
-      await Promise.all(wave.map((d) => this.expandOne(d)));
-
-      this.commitsSinceScore += wave.length;
-      if (this.commitsSinceScore >= SCORE_EVERY) {
-        this.commitsSinceScore = 0;
-        await this.scoreAndPrune();
-        // Plateau only means convergence when there are rival branches to converge
-        // between. With a single region a flat score just means the scorer is coarse,
-        // so halting on it would masquerade as success with a full frontier.
-        if (branchIds(this.graph).length > 1 && isPlateau(this.bestHistory)) return this.halt("plateau");
-      }
-
-      if (this.stepOnce) {
-        this.stepOnce = false;
-        this.pause();
-      }
+      if (!this.cfg.CONTINUOUS) return this.halt("frontier_empty");
+      if (!(await this.grow())) return this.halt("frontier_empty");
     }
+  }
+
+  /** Fire a worker without awaiting it; the pool refills as each one finishes. */
+  private spawn(pick: ScoredDecision): void {
+    this.inFlight.add(pick.node.id);
+    void this.expandOne(pick.node, pick.why).finally(() => {
+      this.inFlight.delete(pick.node.id);
+      this.releaseSlot();
+      void this.maybeScore();
+    });
+  }
+
+  private waitForSlot(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      this.slotWaiters.push(resolve);
+      setTimeout(resolve, 2_000); // safety tick: a lost wakeup must not park the loop
+    });
+  }
+
+  private releaseSlot(): void {
+    const waiters = this.slotWaiters;
+    this.slotWaiters = [];
+    for (const w of waiters) w();
+  }
+
+  private scoreMap(): Map<string, BranchScore> {
+    return new Map(this.log.scores(this.id).map((s) => [s.branchId, s]));
+  }
+
+  private async maybeScore(): Promise<void> {
+    this.commitsSinceScore += 1;
+    if (this.commitsSinceScore < SCORE_EVERY || this.scoring) return;
+    this.commitsSinceScore = 0;
+    this.scoring = true;
+    try {
+      await this.scoreAndPrune();
+    } finally {
+      this.scoring = false;
+    }
+  }
+
+  /**
+   * Generate new work when the frontier empties: critique the branch that has gone
+   * longest without it, then fork a resolved decision into a rival branch so the Scorer
+   * finally has candidates to rank against each other.
+   */
+  private async grow(): Promise<boolean> {
+    if (await this.critique()) return true;
+    if (await this.fork()) return true;
+    return false;
+  }
+
+  private async critique(): Promise<boolean> {
+    const branches = branchIds(this.graph).filter((b) => branchSummary(this.graph, b).components.length > 0);
+    const target = branches.sort((a, b) => (this.lastCritique.get(a) ?? 0) - (this.lastCritique.get(b) ?? 0))[0];
+    if (!target) return false;
+
+    const agentId = newId("ag");
+    this.emit({ type: "agent", agentId, role: "critic", state: "start", message: `critiquing ${target}` });
+    try {
+      const summary = branchSummary(this.graph, target);
+      const { output, usage, model } = await runCritic(this.provider, summary, this.lastSeq);
+      this.budget.record(model, usage);
+      this.lastCritique.set(target, Date.now());
+
+      const ops = compileCriticOps(summary, output, (parentId) => this.childBudgetFor(parentId));
+      if (!ops.length) return false;
+      return await this.commit({
+        id: newId("b"),
+        agentId,
+        role: "critic",
+        origin: "agent",
+        baseVersions: {},
+        ops,
+        reasoning: `${output.holes.length} holes, ${output.decompose.length} components to open up`,
+        ts: Date.now(),
+      });
+    } catch (err) {
+      this.logger.warn({ err, branchId: target }, "critic failed");
+      return false;
+    } finally {
+      this.emit({ type: "agent", agentId, role: "critic", state: "end" });
+    }
+  }
+
+  private async fork(): Promise<boolean> {
+    if (branchIds(this.graph).length >= this.cfg.MAX_BRANCHES) return false;
+    const target = forkCandidates([...this.graph.nodes.values()], this.limits.maxDepth).find(
+      (n) => !this.forked.has(n.id),
+    );
+    if (!target) return false;
+
+    this.forked.add(target.id);
+    const branchId = `alt${this.forkCounter++}`;
+    const ops = compileForkOps(target, branchId);
+    if (!ops.length) return false;
+
+    const chosen = target.data.kind === "decision" ? target.data.chosen : undefined;
+    this.emit({ type: "agent", agentId: branchId, role: "orchestrator", state: "start", message: `forking: ${target.label}` });
+    const ok = await this.commit({
+      id: newId("b"),
+      agentId: branchId,
+      role: "orchestrator",
+      origin: "system",
+      baseVersions: {},
+      ops,
+      reasoning: `forked "${target.label}" into ${branchId} to explore alternatives to "${chosen ?? "?"}"`,
+      ts: Date.now(),
+    });
+    this.emit({ type: "agent", agentId: branchId, role: "orchestrator", state: "end" });
+    return ok;
+  }
+
+  /** Budget and size are throttles, not terminal conditions: pause so a human can resume. */
+  private softStop(reason: HaltReason): void {
+    this.status = "paused";
+    this.haltReason = reason;
+    this.logger.info({ reason, spentUsd: this.budget.spentUsd, nodes: this.graph.nodes.size }, "soft stop");
+    this.emitStatus();
   }
 
   private async intake(): Promise<void> {
@@ -293,11 +444,10 @@ export class Run {
    * move, a Researcher runs first (live search) and the Expander is re-run with its
    * findings in context — so the design choice is made against what is actually true now.
    */
-  private async expandOne(decision: Node): Promise<void> {
+  private async expandOne(decision: Node, why = ""): Promise<void> {
     const agentId = newId("ag");
-    this.inFlight.add(decision.id);
     this.emitFrontier();
-    this.emit({ type: "agent", agentId, role: "expander", state: "start", decisionId: decision.id });
+    this.emit({ type: "agent", agentId, role: "expander", state: "start", decisionId: decision.id, message: why });
 
     try {
       let ctx = localContext(this.graph, decision.id);
@@ -346,7 +496,10 @@ export class Run {
         ts: Date.now(),
       });
 
-      if (!ok) await this.bumpAttempts(decision);
+      // A version conflict is contention, not failure. With a busy pool, several workers
+      // legitimately touch overlapping context; counting those toward the three-strike
+      // stall would take healthy decisions out purely for raising concurrency.
+      if (!ok && !this.lastRejectWasConflict) await this.bumpAttempts(decision);
       this.emit({ type: "agent", agentId, role: "expander", state: "end", decisionId: decision.id });
     } catch (err) {
       const msg = String((err as Error)?.message ?? err);
@@ -355,7 +508,6 @@ export class Run {
       await this.bumpAttempts(decision);
       this.emit({ type: "agent", agentId, role: "expander", state: "error", decisionId: decision.id, message: msg });
     } finally {
-      this.inFlight.delete(decision.id);
       this.emitFrontier();
       this.emitStatus();
     }
@@ -373,7 +525,9 @@ export class Run {
     const parent = this.graph.nodes.get(parentId);
     const depth = parent?.depth ?? 0;
     const existing = [...this.graph.nodes.values()].filter((n) => n.parentId === parentId && n.kind === "decision").length;
-    const taper = Math.max(0, this.limits.maxChildrenPerDecision - depth);
+    // Taper slowly: in continuous mode this is local shape control (stop one node
+    // exploding), not the thing that ends the run, so it must not choke depth off early.
+    const taper = Math.max(1, this.limits.maxChildrenPerDecision - Math.floor(depth / 3));
     const atDepthLimit = depth + 1 >= this.limits.maxDepth;
     return atDepthLimit ? 0 : Math.max(0, Math.min(taper, this.limits.maxChildrenPerDecision - existing));
   }

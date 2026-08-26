@@ -54,6 +54,15 @@ export async function runExpander(
 export const edgeId = (from: string, type: string, to: string) => `e_${from}__${type}__${to}`;
 
 /**
+ * Node ids are namespaced by branch. Models propose stable slugs (`c_mapping_store`), and
+ * two branches exploring the same decision will propose the same slug — which the reducer
+ * treats as an idempotent no-op, silently merging the rival branch into the first. Without
+ * this, forking cannot work at all.
+ */
+export const nsId = (branchId: string, rawId: string) =>
+  rawId.includes("~") ? rawId : `${branchId}~${rawId}`;
+
+/**
  * Compile an Expander's proposal into validated core Ops.
  * The server owns id namespacing and edge typing; the model never touches layout.
  *
@@ -69,16 +78,29 @@ export function compileOps(ctx: LocalContext, out: ExpanderOutput, childBudget =
     ...ctx.requirements.map((r) => r.id),
     ...ctx.spine.map((n) => n.id),
   ]);
+  const ns = (raw: string) => nsId(d.branchId, raw);
+
+  /** A model reference is either a node it just proposed, or one already in its context. */
+  const created = new Map<string, string>();
+  const resolveRef = (ref: string): string | null => {
+    const made = created.get(ref);
+    if (made) return made;
+    if (known.has(ref)) return ref;
+    const namespaced = ns(ref);
+    return known.has(namespaced) ? namespaced : null;
+  };
 
   ops.push({ op: "resolveDecision", id: d.id, chosen: out.chosen, rationale: out.rationale });
 
   for (const c of out.components) {
-    if (known.has(c.id)) continue;
-    known.add(c.id);
+    const id = ns(c.id);
+    if (known.has(id)) continue;
+    known.add(id);
+    created.set(c.id, id);
     ops.push({
       op: "addNode",
       node: {
-        id: c.id,
+        id,
         kind: "component",
         label: c.label,
         description: c.description,
@@ -92,22 +114,25 @@ export function compileOps(ctx: LocalContext, out: ExpanderOutput, childBudget =
         },
       },
     });
-    ops.push({ op: "addEdge", edge: { id: edgeId(c.id, "resolves", d.id), from: c.id, to: d.id, type: "resolves" } });
+    ops.push({ op: "addEdge", edge: { id: edgeId(id, "resolves", d.id), from: id, to: d.id, type: "resolves" } });
     for (const reqId of c.satisfies) {
-      if (ctx.requirements.some((r) => r.id === reqId)) {
-        ops.push({ op: "addEdge", edge: { id: edgeId(c.id, "satisfies", reqId), from: c.id, to: reqId, type: "satisfies" } });
+      const target = resolveRef(reqId);
+      if (target && ctx.requirements.some((r) => r.id === target)) {
+        ops.push({ op: "addEdge", edge: { id: edgeId(id, "satisfies", target), from: id, to: target, type: "satisfies" } });
       }
     }
   }
 
   for (const e of out.edges) {
-    if (!known.has(e.from) || !known.has(e.to)) continue;
+    const from = resolveRef(e.from);
+    const to = resolveRef(e.to);
+    if (!from || !to) continue;
     ops.push({
       op: "addEdge",
       edge: {
-        id: edgeId(e.from, e.type, e.to),
-        from: e.from,
-        to: e.to,
+        id: edgeId(from, e.type, to),
+        from,
+        to,
         type: e.type,
         ...(e.label ? { label: e.label } : {}),
         ...(e.sync !== undefined ? { sync: e.sync } : {}),
@@ -119,7 +144,7 @@ export function compileOps(ctx: LocalContext, out: ExpanderOutput, childBudget =
   for (const nd of out.newDecisions.slice(0, Math.max(0, childBudget))) {
     ops.push({
       op: "openDecision",
-      id: nd.id,
+      id: ns(nd.id),
       parentId: d.id,
       branchId: d.branchId,
       question: nd.question,
