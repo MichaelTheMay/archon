@@ -118,10 +118,11 @@ export function applyBatch(input: DesignGraph, batch: OpBatch, limits: Limits): 
         const depth = parent ? parent.depth + 1 : 0;
         if (depth > limits.maxDepth) return { ok: false, rejected: { reason: `depth ${depth} > maxDepth`, opIndex: i } };
         if (g.nodes.size >= limits.maxNodes) return { ok: false, rejected: { reason: `node limit reached`, opIndex: i } };
-        // The fan-out cap exists to stop agents from running away. A human asking a
-        // follow-up is not runaway — and deep parents legitimately sit at the cap, so
-        // enforcing it here would silently reject exactly the questions worth asking.
-        if (parent && batch.origin !== "human") {
+        // The fan-out cap exists to stop *models* running away. A human follow-up or an
+        // orchestrator-driven fork is deliberate, and parents legitimately sit at the cap,
+        // so enforcing it against them silently rejects exactly the work worth doing —
+        // which is what kept every fork from ever landing.
+        if (parent && batch.origin === "agent") {
           const siblings = [...g.nodes.values()].filter((n) => n.parentId === parent.id && n.kind === "decision").length;
           if (siblings >= limits.maxChildrenPerDecision)
             return { ok: false, rejected: { reason: `fan-out cap ${limits.maxChildrenPerDecision} on ${parent.id}`, opIndex: i } };

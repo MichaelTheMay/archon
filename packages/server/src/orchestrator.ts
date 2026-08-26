@@ -49,6 +49,8 @@ import { debounceLayout, layoutGraph } from "./layout.js";
 import type { OpLog } from "./oplog.js";
 
 const SCORE_EVERY = 4;
+/** How many commits between scheduled branch forks. */
+const GROW_EVERY = 8;
 
 export class Run {
   graph: DesignGraph = emptyGraph();
@@ -69,6 +71,8 @@ export class Run {
   private lastRateLimit = 0;
   private slotWaiters: (() => void)[] = [];
   private scoring = false;
+  private growing = false;
+  private commitsSinceGrow = 0;
   private lastRejectWasConflict = false;
   private lastCritique = new Map<string, number>();
   private forked = new Set<string>();
@@ -324,6 +328,27 @@ export class Run {
 
   private async maybeScore(): Promise<void> {
     this.commitsSinceScore += 1;
+    this.commitsSinceGrow += 1;
+    this.logger.debug(
+      { sinceScore: this.commitsSinceScore, sinceGrow: this.commitsSinceGrow, branches: branchIds(this.graph).length },
+      "worker finished",
+    );
+
+    // Growth must not wait for an idle frontier. With a full worker pool the frontier
+    // never empties, so forking-on-empty would mean the run only ever explores one
+    // branch — and the whole ranked-forest apparatus stays dormant. Fork on a cadence.
+    if (this.cfg.CONTINUOUS && this.commitsSinceGrow >= GROW_EVERY && !this.growing) {
+      this.commitsSinceGrow = 0;
+      this.growing = true;
+      try {
+        await this.fork();
+      } catch (err) {
+        this.logger.warn({ err }, "scheduled fork failed");
+      } finally {
+        this.growing = false;
+      }
+    }
+
     if (this.commitsSinceScore < SCORE_EVERY || this.scoring) return;
     this.commitsSinceScore = 0;
     this.scoring = true;
@@ -379,10 +404,13 @@ export class Run {
   }
 
   private async fork(): Promise<boolean> {
-    if (branchIds(this.graph).length >= this.cfg.MAX_BRANCHES) return false;
-    const target = forkCandidates([...this.graph.nodes.values()], this.limits.maxDepth).find(
+    const branches = branchIds(this.graph).length;
+    if (branches >= this.cfg.MAX_BRANCHES) return false;
+    const candidates = forkCandidates([...this.graph.nodes.values()], this.limits.maxDepth).filter(
       (n) => !this.forked.has(n.id),
     );
+    const target = candidates[0];
+    this.logger.info({ branches, candidates: candidates.length, target: target?.id }, "fork check");
     if (!target) return false;
 
     this.forked.add(target.id);

@@ -5,11 +5,12 @@ interface Props {
   haltReason: HaltReason | undefined;
   budget: BudgetSnapshot;
   activity: { agentId: string; role: string; message: string | undefined }[];
+  workers: number;
   onControl: (a: "start" | "pause" | "step") => void;
   onBudget: (usd: number | null) => void;
 }
 
-export function Controls({ status, haltReason, budget, activity, onControl, onBudget }: Props) {
+export function Controls({ status, haltReason, budget, activity, workers, onControl, onBudget }: Props) {
   const pct = budget.limitUsd ? Math.min(100, (budget.spentUsd / budget.limitUsd) * 100) : 0;
   return (
     <section className="panel">
@@ -50,7 +51,7 @@ export function Controls({ status, haltReason, budget, activity, onControl, onBu
       {activity.length > 0 && (
         <ul className="activity">
           <li className="workers">
-            {activity.length} worker{activity.length === 1 ? "" : "s"} running
+            {workers} worker{workers === 1 ? "" : "s"} in flight
           </li>
           {activity.map((a) => (
             <li key={a.agentId + a.role}>

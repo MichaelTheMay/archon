@@ -220,6 +220,7 @@ export function App() {
           haltReason={haltReason}
           budget={budget}
           activity={activity}
+          workers={inFlight.length}
           onControl={(a) => void api.control(runId, a)}
           onBudget={(usd) => void api.setBudget(runId, usd)}
         />
